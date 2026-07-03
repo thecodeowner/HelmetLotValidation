@@ -1,0 +1,34 @@
+# --- Sensitive data: never commit real batch data, documents, DBs, or secrets ---
+config.yaml
+config.local.yaml
+*.mdb
+*.accdb
+*.pdf
+# Real/sample lot files and generated output (keep anonymized fixtures explicit-add only)
+/samples/
+/handover/
+/output/
+*.report.xlsx
+# Allow the documented example config
+!config.example.yaml
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# --- PyInstaller build artifacts ---
+build/
+dist/
+*.spec
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

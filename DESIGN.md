@@ -328,3 +328,42 @@ updates from the worker thread. A cancel button stops cleanly.
   flagging low-confidence reads for manual check rather than asserting a result.
 - **Arena rate limits** — cache BOM lookups; one BOM per part number per run.
 - **Access driver bitness mismatch** — standardize on 64-bit engine + `.exe`.
+
+## 13. Data protection & privacy
+
+- **Runtime is fully local.** The shipped `.exe` reads DBs, scans documents, and
+  writes reports entirely on the Windows PC. No batch data, serial numbers,
+  certificate contents, or credentials are transmitted anywhere at runtime.
+- **Databases are opened read-only;** credentials live only in the encrypted
+  config (DPAPI / Windows Credential Manager), never in source or the report.
+- **Nothing sensitive is committed.** `.gitignore` excludes real config files,
+  sample lot files, certificates, DB copies, and generated packages/reports.
+- **Development-phase discipline** (while building with the AI coding assistant):
+  the assistant runs *tools locally* but the model runs remotely, so only what is
+  pulled into its context is transmitted. Therefore, by convention:
+  - the assistant works from **schema + a few representative rows + aggregate
+    results**, not full sensitive datasets;
+  - heavy data processing is done by **locally-run scripts** that emit redacted or
+    summarized output;
+  - **synthetic/anonymized** sample data is preferred for iteration.
+  - Confirm the applicable Anthropic plan's data-retention/DPA terms before
+    pointing tools at regulated data.
+
+## 14. Living documentation convention (maintained as we build)
+
+A human-readable walkthrough is kept **in sync with the code at all times** so a
+person can follow the logic without reading every line. Maintained in
+`HOW_IT_WORKS.md` and updated in the same commit as the code it describes.
+
+It must always contain:
+- **General flow** — end-to-end narrative of a run (file in → checks → package →
+  report out), with the order modules execute in.
+- **Per-module summary** — what each package/file is responsible for.
+- **Per-function/sub reference** — every function and sub named with its
+  **purpose** stated in one line (inputs → what it does → outputs), grouped by
+  module. Names are chosen to be self-descriptive.
+- **Key decisions & rules** — where the tricky logic lives (lot-string parsing,
+  date disambiguation, partial part-number matching) and how it behaves.
+
+Code style supports this: descriptive names, docstrings on every function/sub that
+match the walkthrough, and comments where the *why* isn't obvious.
