@@ -79,7 +79,67 @@ Modules (Python packages):
 - `arena/` — login, item lookup, recursive BOM fetch, in-memory cache.
 - `docs/` — supplier-tree search, PDF/OCR text extraction, PO & part-number matching.
 - `report/` — summary sheet + coloured detail sheet writer.
-- `app/` — GUI, orchestrator, status/progress plumbing, config.
+- `config/` — load/validate the external config file; expose typed settings to all modules.
+- `app/` — GUI, orchestrator, status/progress plumbing.
+
+## 3.1 Configuration file
+
+Nothing environment-specific is hard-coded. All credentials and anything that
+can change between PCs, sites, or over time live in an **external editable config
+file** next to the `.exe`, loaded at startup and validated (with clear errors if
+something is missing or malformed).
+
+**Format:** a human-readable `config.yaml` (or `.ini`), plus a first-run
+GUI **Settings** screen so a non-technical operator can edit it without a text
+editor.
+
+**Location & precedence:** the app looks for the config in order: (1) a path given
+on the command line / an env var, (2) `%PROGRAMDATA%\HelmetLotValidation\config.yaml`
+(shared, machine-wide), (3) `config.yaml` beside the `.exe`. A bundled
+`config.example.yaml` documents every key.
+
+**Contents (illustrative):**
+```yaml
+databases:
+  molding:   { path: "\\\\server\\share\\Molding.accdb",  password: "" }
+  assembly:  { path: "\\\\server\\share\\Assembly.accdb", password: "" }
+  quality:   { path: "\\\\server\\share\\Quality.accdb",  password: "" }
+  bonding:   { path: "\\\\server\\share\\Bonding.accdb",  password: "" }
+
+paths:
+  supplier_root: "M:\\Armor\\Newport\\QUALITY\\Incoming_Inspection\\Supplier"
+  output_root:   "M:\\Armor\\Newport\\QUALITY\\HandOver"   # where packages/reports go
+
+arena:
+  base_url:     "https://api.arenasolutions.com/v1"
+  email:        "integration.user@company.com"
+  password:     ""              # see credential handling below
+  workspace_id: 123456789
+  bom_max_depth: 0              # 0 = full explosion
+
+matching:
+  po_prefixes: ["PR", "PE", "PC"]
+  weight_tolerance_source: "base_information"   # tolerances read from the file
+  text_compare: { trim: true, case_insensitive: true }
+
+product_db_map:                 # which DBs apply per product/part number (see §5, A4)
+  "4-8762-0039": [molding, assembly, quality, bonding]
+
+ocr:
+  tesseract_path: "C:\\Program Files\\Tesseract-OCR\\tesseract.exe"
+  poppler_path:   "C:\\Tools\\poppler\\bin"
+```
+
+**Credential handling.** Storing passwords in plain text on a shared PC is a risk.
+Options, in order of preference:
+1. **Windows DPAPI-encrypted** secrets (via the Settings screen), decryptable only
+   by the same Windows user/machine — passwords never sit in plain text on disk.
+2. **Windows Credential Manager** entries referenced by name from the config.
+3. Plain text in the config as a last resort (documented as not recommended).
+Arena SSO note: a **dedicated integration user** is recommended over a personal login.
+
+> **[TO INVESTIGATE]** Whether the DBs/Arena use shared service credentials or the
+> logged-in user's Windows auth, and which secret-storage option IT will accept.
 
 ## 4. Input file specification (from the sample)
 
@@ -256,6 +316,9 @@ updates from the worker thread. A cancel button stops cleanly.
   tab and how they apply to DB-vs-file weight comparisons.
 - Access DB file names/paths and driver bitness on the target PC.
 - Report format final call: Excel only vs Excel + PDF (H22).
+- **Config & secrets** — which credential-storage option IT will accept (DPAPI
+  vs Windows Credential Manager vs plain text), and whether DB/Arena access uses
+  shared service credentials or the logged-in Windows user (see §3.1).
 
 ## 12. Risks
 
