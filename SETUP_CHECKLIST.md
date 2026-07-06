@@ -22,7 +22,8 @@ follow later.
 - [ ] Clone this repo and check out the branch `claude/batch-config-scanner-app-mc0yq1`.
 
 ## 2. Python + build tooling  *(Phase 1)*
-- [ ] Install **Python 3.12 (64-bit)**, "Add to PATH" checked.
+- [ ] Install **Python 3.12 or 3.13 (64-bit)**, "Add to PATH" checked (avoid the
+      very newest release, e.g. 3.14, for binary-wheel maturity).
 - [ ] Confirm in a terminal: `python --version` and `pip --version`.
 - [ ] (I'll create the project venv and `requirements.txt` during scaffolding.)
 
@@ -30,17 +31,23 @@ follow later.
 > packaged `.exe` must **all be 64-bit** (or all 32-bit). Mixing them is the most
 > common "can't connect to the DB" failure. We standardize on **64-bit**.
 
-## 3. Microsoft Access connectivity  *(Phase 1)*
-- [ ] Install **Microsoft Access Database Engine 2016 Redistributable (64-bit)**
-      (needed even if Office isn't installed; provides the ODBC/OLEDB driver).
-- [ ] Confirm the driver appears in **ODBC Data Sources (64-bit) → Drivers**
-      ("Microsoft Access Driver (*.mdb, *.accdb)").
-- [ ] Read access to each DB share; note the **UNC paths** and whether any DB has
-      a **password**. (Goes into the config, encrypted.)
-- [ ] Confirm access is **read-only** for our credentials.
+## 3. Database drivers  *(Phase 1)*
+Two engines are involved — a machine with Office/SQL tools often already has both,
+but confirm:
+- [ ] **ODBC Driver 17 (or 18) for SQL Server (64-bit)** — for Assembly
+      (`Newport Assembly.dbo.UnitsComplete`) and Quality
+      (`ArmorQC.dbo.v_LastInspections`) on `NPTSVRSQL01\NEWPORTSQL`. These use
+      **Windows authentication**, so **no password** — the logged-in Windows user
+      must have **read** access to both databases.
+- [ ] **Microsoft Access Database Engine 2016 Redistributable (64-bit)** — for the
+      Bonding file `BondingLog_tables.accdb` (needed even if Office isn't installed).
+- [ ] Confirm both drivers appear in **ODBC Data Sources (64-bit) → Drivers**
+      ("ODBC Driver 17 for SQL Server" and "Microsoft Access Driver (*.mdb, *.accdb)").
 
 ## 4. Access & network reachability  *(Phase 1 + 2)*
-- [ ] The four Access DB locations are reachable from this PC (Phase 1).
+- [ ] `NPTSVRSQL01\NEWPORTSQL` is reachable and the logged-in user can read the
+      `Newport Assembly` and `ArmorQC` databases (Phase 1).
+- [ ] The Bonding `.accdb` path on `M:` is reachable and readable (Phase 1).
 - [ ] The supplier tree root is reachable: `M:\Armor\Newport\QUALITY\Incoming_Inspection\Supplier` (Phase 2).
 - [ ] The hand-over **output** location is writable (Phase 2).
 - [ ] Outbound HTTPS to `https://api.arenasolutions.com` is allowed (Phase 2).

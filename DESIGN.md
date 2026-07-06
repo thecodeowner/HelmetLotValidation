@@ -27,9 +27,10 @@ DBs (read-only) and the **Arena REST API**, and writes the report + package to d
 
 | Concern | Choice | Why |
 |---|---|---|
-| Language/runtime | Python 3.12 | Fast to build/iterate; strong libraries for every piece below |
+| Language/runtime | Python 3.12 or 3.13 (64-bit) | Fast to build/iterate; strong libraries for every piece below (avoid the very newest release for binary-wheel maturity) |
 | GUI | PySide6 (Qt) | Native-looking desktop window, real progress/status bar, background worker threads so the UI never freezes during long runs |
-| Access DB access | `pyodbc` via the **Microsoft Access Database Engine** ODBC driver | Reliable read of `.mdb`/`.accdb` on the target PC |
+| SQL Server access (Assembly, Quality) | `pyodbc` via the **ODBC Driver 17/18 for SQL Server**, Windows auth | Reads `dbo.UnitsComplete` / `dbo.v_LastInspections`; no stored password |
+| Access DB access (Bonding) | `pyodbc` via the **Microsoft Access Database Engine** ODBC driver | Reads the Bonding `.accdb` on the `M:` share |
 | Excel read | `openpyxl` | Reads the lot file; also writes the coloured report |
 | Report write | `openpyxl` (xlsx) + optional PDF snapshot | Colour cell fills mirror the lot layout |
 | PDF / OCR | `pypdf` (native text) + `pdf2image` + **Tesseract** OCR (scanned pages) | Certs/POs are scanned images → OCR required |
@@ -101,10 +102,29 @@ on the command line / an env var, (2) `%PROGRAMDATA%\HelmetLotValidation\config.
 **Contents (illustrative):**
 ```yaml
 databases:
-  molding:   { path: "\\\\server\\share\\Molding.accdb",  password: "" }
-  assembly:  { path: "\\\\server\\share\\Assembly.accdb", password: "" }
-  quality:   { path: "\\\\server\\share\\Quality.accdb",  password: "" }
-  bonding:   { path: "\\\\server\\share\\Bonding.accdb",  password: "" }
+  # Assembly + Quality are SQL Server on NPTSVRSQL01\NEWPORTSQL using Windows
+  # auth (Trusted_Connection) -> no password stored; runs as the logged-in user.
+  assembly:
+    kind: sqlserver
+    server: "NPTSVRSQL01\\NEWPORTSQL"
+    database: "Newport Assembly"
+    table: "dbo.UnitsComplete"
+    trusted_connection: true
+    driver: "ODBC Driver 17 for SQL Server"
+  quality:
+    kind: sqlserver
+    server: "NPTSVRSQL01\\NEWPORTSQL"
+    database: "ArmorQC"
+    table: "dbo.v_LastInspections"
+    trusted_connection: true
+    driver: "ODBC Driver 17 for SQL Server"
+  # Bonding is a Microsoft Access file on the M: share. Used for ENRICHMENT
+  # (pull adhesive lots into the output), not validation.
+  bonding:
+    kind: access
+    path: "M:\\Armor\\Newport\\MANUFACTURING\\Electronic Reporting\\Bonding Inspection\\BondingLog_tables.accdb"
+    table: "dbo_bondinginspections"
+    password: ""
 
 paths:
   supplier_root: "M:\\Armor\\Newport\\QUALITY\\Incoming_Inspection\\Supplier"
@@ -171,26 +191,43 @@ Three sheets:
 
 ## 5. Function 1 — Database sanity check
 
-**Databases** live on the network, opened **strictly read-only**.
+**Data sources** (all opened **strictly read-only**). Confirmed connection details:
 
-**Product → database applicability**
-- The set of applicable DBs depends on the product. **Bonding DB is conditional:**
-  if the file has **no** bonding lot at all, skip the Bonding DB; if **some** rows
-  have it and others don't, the file is **incomplete → flag**.
-- **[TO INVESTIGATE — A4]** exact rule that maps Product/Part number → which DBs
-  (Molding/Assembly/Quality) apply. Likely a small config table keyed by part number.
+| Role | Engine | Location | Table/view | Auth |
+|---|---|---|---|---|
+| **Assembly** | SQL Server | `NPTSVRSQL01\NEWPORTSQL` › db `Newport Assembly` | `dbo.UnitsComplete` | Windows (Trusted_Connection) |
+| **Quality / Inspection** | SQL Server | `NPTSVRSQL01\NEWPORTSQL` › db `ArmorQC` | `dbo.v_LastInspections` | Windows (Trusted_Connection) |
+| **Bonding** *(enrichment, not validation)* | Access `.accdb` | `M:\...\Bonding Inspection\BondingLog_tables.accdb` | `dbo_bondinginspections` | file (open read-only) |
 
-**Join keys** (per the discussion): each DB is matched to a file row by either
-**SerialNumber** or **Mold-ID**, depending on the database.
+- Assembly + Quality use **Windows authentication**, so they run as the logged-in
+  user and there is **no DB password to store**.
+- **Only 3 tables** are needed for the comparisons (the earlier separate "Molding
+  DB" is not a distinct source — the molded `Weight` / `Mold-ID` check is expected
+  to come from `dbo.UnitsComplete`; **confirm at connection time by inspecting the
+  view's columns — Q1**).
 
-**Field-to-DB mapping (draft, to confirm — A2)**
+### 5.1 Validation (Assembly + Quality)
+**Join keys:** each source is matched to a file row by **SerialNumber** or
+**Mold-ID** (to confirm per source by inspecting columns — A2/A3).
 
-| File field | Likely DB | Join key |
+**Field-to-source mapping (draft, confirm against real columns — A2)**
+
+| File field | Source | Join key |
 |---|---|---|
-| Mold-ID, molded `Weight`, molding date | Molding DB | Mold-ID |
-| SerialNumber, `iCombatWeight`, component lots, `Item`, `Size`, `dtAssembled` | Assembly DB | SerialNumber |
-| bonded lots (`sAnchorPDxTBondedLot`, adhesives) | Bonding DB | SerialNumber / Mold-ID |
-| inspection result, `dtInspected` | Quality DB | SerialNumber |
+| SerialNumber, `iCombatWeight`, `Item`, `Size`, `dtAssembled`, molded `Weight`, `Mold-ID` | Assembly (`dbo.UnitsComplete`) | SerialNumber / Mold-ID |
+| inspection result, `dtInspected` | Quality (`dbo.v_LastInspections`) | SerialNumber |
+
+Checks (existence, field equality trimmed/case-insensitive, weight tolerances vs
+Base information, part number, duplicates within file, tab cross-check) as below.
+
+### 5.2 Enrichment (Bonding)
+The adhesive-lot information is **not reliably present in the input file**, so
+instead of validating it, the app **pulls the adhesive lots from the Bonding
+Access DB (`dbo_bondinginspections`) and writes them into the enriched output**
+(the source file is not mutated — **Q2**).
+- Join key and exact adhesive columns to populate: **[CONFIRM — Q3]** (candidates:
+  `sAnchorPDxTBondedLot`, `sTrimAdhesiveLot`, `sTrimSealantAdhesiveLot`).
+- Rows with no matching bonding record are flagged **Unknown / missing bonding data**.
 
 > Not every file field lives in every DB — each field is only checked where it
 > actually exists. Some dates come *from* the DB and are compared back to the file.
