@@ -34,11 +34,11 @@ follow later.
 ## 3. Database drivers  *(Phase 1)*
 Two engines are involved — a machine with Office/SQL tools often already has both,
 but confirm:
-- [ ] **ODBC Driver 17 (or 18) for SQL Server (64-bit)** — for Assembly
-      (`Newport Assembly.dbo.UnitsComplete`) and Quality
-      (`ArmorQC.dbo.v_LastInspections`) on `NPTSVRSQL01\NEWPORTSQL`. These use
-      **Windows authentication**, so **no password** — the logged-in Windows user
-      must have **read** access to both databases.
+- [ ] **ODBC Driver 17 (or 18) for SQL Server (64-bit)** — for Molding
+      (`MoldingLog.dbo.Shells`), Assembly (`Newport Assembly.dbo.UnitsComplete`),
+      and Quality (`ArmorQC.dbo.v_LastInspections`) on `NPTSVRSQL01\NEWPORTSQL`.
+      These use **Windows authentication**, so **no password** — the logged-in
+      Windows user must have **read** access to all three databases.
 - [ ] **Microsoft Access Database Engine 2016 Redistributable (64-bit)** — for the
       Bonding file `BondingLog_tables.accdb` (needed even if Office isn't installed).
 - [ ] Confirm both drivers appear in **ODBC Data Sources (64-bit) → Drivers**
@@ -46,7 +46,7 @@ but confirm:
 
 ## 4. Access & network reachability  *(Phase 1 + 2)*
 - [ ] `NPTSVRSQL01\NEWPORTSQL` is reachable and the logged-in user can read the
-      `Newport Assembly` and `ArmorQC` databases (Phase 1).
+      `MoldingLog`, `Newport Assembly`, and `ArmorQC` databases (Phase 1).
 - [ ] The Bonding `.accdb` path on `M:` is reachable and readable (Phase 1).
 - [ ] The supplier tree root is reachable: `M:\Armor\Newport\QUALITY\Incoming_Inspection\Supplier` (Phase 2).
 - [ ] The hand-over **output** location is writable (Phase 2).

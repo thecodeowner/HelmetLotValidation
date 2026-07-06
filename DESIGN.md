@@ -29,7 +29,7 @@ DBs (read-only) and the **Arena REST API**, and writes the report + package to d
 |---|---|---|
 | Language/runtime | Python 3.12 or 3.13 (64-bit) | Fast to build/iterate; strong libraries for every piece below (avoid the very newest release for binary-wheel maturity) |
 | GUI | PySide6 (Qt) | Native-looking desktop window, real progress/status bar, background worker threads so the UI never freezes during long runs |
-| SQL Server access (Assembly, Quality) | `pyodbc` via the **ODBC Driver 17/18 for SQL Server**, Windows auth | Reads `dbo.UnitsComplete` / `dbo.v_LastInspections`; no stored password |
+| SQL Server access (Molding, Assembly, Quality) | `pyodbc` via the **ODBC Driver 17/18 for SQL Server**, Windows auth | Reads `dbo.Shells` / `dbo.UnitsComplete` / `dbo.v_LastInspections`; no stored password |
 | Access DB access (Bonding) | `pyodbc` via the **Microsoft Access Database Engine** ODBC driver | Reads the Bonding `.accdb` on the `M:` share |
 | Excel read | `openpyxl` | Reads the lot file; also writes the coloured report |
 | Report write | `openpyxl` (xlsx) + optional PDF snapshot | Colour cell fills mirror the lot layout |
@@ -102,8 +102,15 @@ on the command line / an env var, (2) `%PROGRAMDATA%\HelmetLotValidation\config.
 **Contents (illustrative):**
 ```yaml
 databases:
-  # Assembly + Quality are SQL Server on NPTSVRSQL01\NEWPORTSQL using Windows
-  # auth (Trusted_Connection) -> no password stored; runs as the logged-in user.
+  # Molding + Assembly + Quality are SQL Server on NPTSVRSQL01\NEWPORTSQL using
+  # Windows auth (Trusted_Connection) -> no password stored; runs as logged-in user.
+  molding:
+    kind: sqlserver
+    server: "NPTSVRSQL01\\NEWPORTSQL"
+    database: "MoldingLog"
+    table: "dbo.Shells"
+    trusted_connection: true
+    driver: "ODBC Driver 17 for SQL Server"
   assembly:
     kind: sqlserver
     server: "NPTSVRSQL01\\NEWPORTSQL"
@@ -195,38 +202,39 @@ Three sheets:
 
 | Role | Engine | Location | Table/view | Auth |
 |---|---|---|---|---|
+| **Molding** | SQL Server | `NPTSVRSQL01\NEWPORTSQL` › db `MoldingLog` | `dbo.Shells` | Windows (Trusted_Connection) |
 | **Assembly** | SQL Server | `NPTSVRSQL01\NEWPORTSQL` › db `Newport Assembly` | `dbo.UnitsComplete` | Windows (Trusted_Connection) |
 | **Quality / Inspection** | SQL Server | `NPTSVRSQL01\NEWPORTSQL` › db `ArmorQC` | `dbo.v_LastInspections` | Windows (Trusted_Connection) |
 | **Bonding** *(enrichment, not validation)* | Access `.accdb` | `M:\...\Bonding Inspection\BondingLog_tables.accdb` | `dbo_bondinginspections` | file (open read-only) |
 
-- Assembly + Quality use **Windows authentication**, so they run as the logged-in
-  user and there is **no DB password to store**.
-- **Only 3 tables** are needed for the comparisons (the earlier separate "Molding
-  DB" is not a distinct source — the molded `Weight` / `Mold-ID` check is expected
-  to come from `dbo.UnitsComplete`; **confirm at connection time by inspecting the
-  view's columns — Q1**).
+- All three SQL sources use **Windows authentication**, so they run as the
+  logged-in user and there is **no DB password to store**.
+- **Three tables drive the comparisons** (Molding, Assembly, Quality); the Bonding
+  Access file is used only for **enrichment**.
+- **Molding → Assembly → Bonding link:** `dbo.Shells` carries both **Mold-ID** and
+  **ShellID**; ShellID is the key used to pull bonding records (§5.2).
 
-### 5.1 Validation (Assembly + Quality)
-**Join keys:** each source is matched to a file row by **SerialNumber** or
-**Mold-ID** (to confirm per source by inspecting columns — A2/A3).
-
-**Field-to-source mapping (draft, confirm against real columns — A2)**
+### 5.1 Validation (Molding + Assembly + Quality)
+**Field-to-source mapping (confirmed; verify exact column names at connect time)**
 
 | File field | Source | Join key |
 |---|---|---|
-| SerialNumber, `iCombatWeight`, `Item`, `Size`, `dtAssembled`, molded `Weight`, `Mold-ID` | Assembly (`dbo.UnitsComplete`) | SerialNumber / Mold-ID |
-| inspection result, `dtInspected` | Quality (`dbo.v_LastInspections`) | SerialNumber |
+| `Mold-ID` (+ derives `ShellID`) | Molding (`dbo.Shells`) | Mold-ID |
+| SerialNumber, `Item`, `Size`, `dtAssembled`, `Product`, identity fields | Assembly (`dbo.UnitsComplete`) | SerialNumber |
+| molded `Weight` **and** `iCombatWeight`, inspection result, `dtInspected` | Quality (`dbo.v_LastInspections`) | SerialNumber |
 
-Checks (existence, field equality trimmed/case-insensitive, weight tolerances vs
-Base information, part number, duplicates within file, tab cross-check) as below.
+Checks: existence, field equality (trimmed/case-insensitive), weight tolerances vs
+Base information, part number, duplicates within file, and tab cross-check.
 
 ### 5.2 Enrichment (Bonding)
 The adhesive-lot information is **not reliably present in the input file**, so
 instead of validating it, the app **pulls the adhesive lots from the Bonding
-Access DB (`dbo_bondinginspections`) and writes them into the enriched output**
-(the source file is not mutated — **Q2**).
-- Join key and exact adhesive columns to populate: **[CONFIRM — Q3]** (candidates:
-  `sAnchorPDxTBondedLot`, `sTrimAdhesiveLot`, `sTrimSealantAdhesiveLot`).
+Access DB (`dbo_bondinginspections`) and writes them into an enriched output copy**
+(the source file is not mutated — recommended default, confirm).
+- **Join key: `ShellID`** — obtained from `dbo.Shells` (matched to the file row by
+  Mold-ID), then used to look up the bonding record.
+- Adhesive columns to populate (confirm exact names when inspecting the table):
+  `sAnchorPDxTBondedLot`, `sTrimAdhesiveLot`, `sTrimSealantAdhesiveLot`.
 - Rows with no matching bonding record are flagged **Unknown / missing bonding data**.
 
 > Not every file field lives in every DB — each field is only checked where it
